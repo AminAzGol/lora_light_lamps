@@ -4,6 +4,7 @@
 */
 #include <SPI.h>              // include libraries
 #include <LoRa.h>
+#define LAMP_PIN_NUMBER 7
 
 
 byte gateway_id = 0x01;
@@ -18,7 +19,7 @@ byte broadcast_address = 0xFF;
 
 bool serial_log = true;
 byte waite_time_base = 2;
-byte wait_time_range = 10;     // time to wait befor repeat (millis)
+byte wait_time_range = 1;     // time to wait befor repeat (millis)
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 2;         // change for your board; must be a hardware interrupt pin
@@ -27,9 +28,10 @@ const int irqPin = 2;         // change for your board; must be a hardware inter
 void setup() { 
   Serial.begin(9600);                   // initialize serial
   while (!Serial);
-
+  
   log("LoRa lighting system Node");
 
+  pinMode(LAMP_PIN_NUMBER,OUTPUT);
   // override the default CS, reset, and IRQ pins (optional)
   LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
 
@@ -84,6 +86,7 @@ void onReceive(int packetSize) {
     return;                             // skip rest of function
   }
 
+  log("");
   log("Received from: 0x" + String(sender, HEX));
   log("Sent to: 0x" + String(recipient, HEX));
   log("Message ID: " + String(incoming_packet_id));
@@ -91,7 +94,6 @@ void onReceive(int packetSize) {
   log("Message: " + incoming);
   log("RSSI: " + String(LoRa.packetRssi()));
   log("Snr: " + String(LoRa.packetSnr()));
-  log("");
   
   /*check if packet id is more than max*/
   if( incoming_packet_id >= max_packet_id){
@@ -152,10 +154,10 @@ void repeat(byte destination, byte msg_id, byte driection, byte try_count,String
 void run_command(String incoming){
   log("running the incomming Command" + incoming);
   if( incoming == "turn_on")
-    digitalWrite(LED_BUILTIN, HIGH);
+    digitalWrite(LAMP_PIN_NUMBER, HIGH);
 
   else if( incoming  == "turn_off" )
-    digitalWrite(LED_BUILTIN, LOW);
+    digitalWrite(LAMP_PIN_NUMBER, LOW);
 
   else if( incoming == "packet_numbers_reset")
     clear_visited();

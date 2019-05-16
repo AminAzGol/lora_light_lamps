@@ -63,6 +63,7 @@ void loop()
       command = Serial.readString();
       log("node_id: " + String(node_id, DEC));
       log("command: " + command);
+      current_try = 0;
       LoRa_transmit(node_id, packet_id, 0, current_try, command);
       current_time = millis();
       current_timeout = current_time + timeout;
