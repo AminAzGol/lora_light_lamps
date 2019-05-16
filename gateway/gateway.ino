@@ -73,6 +73,7 @@ void loop()
       //wait for ack
       if(onReceive(LoRa.parsePacket())){
         update_packet_id();
+        server_response("Node: " + String(node_id,DEC) + " status is ok");
         change_state(State::server);
       } 
       else if(current_time <= current_timeout){

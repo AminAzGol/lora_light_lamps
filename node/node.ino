@@ -7,7 +7,7 @@
 
 
 byte gateway_id = 0x01;
-byte local_address = 0xBB;     // address of this device
+byte local_address = 0x01;     // address of this device
 const int max_packet_id = 128;
 const byte max_try_number = 3;
 const byte direction_count = 2;
