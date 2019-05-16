@@ -1,51 +1,40 @@
 /*
-  LoRa Duplex communication
-
-  Sends a message every half second, and polls continually
-  for new incoming messages. Implements a one-byte addressing scheme,
-  with 0xFF as the broadcast address.
-
-  Uses readString() from Stream class to read payload. The Stream class'
-  timeout may affect other functuons, like the radio's callback. For an
-
-  created 28 April 2017
-  by Tom Igoe
+  LoRa lighting system Node
+  Author: Mohammad Amin Alizadeh Golestani
 */
 #include <SPI.h>              // include libraries
 #include <LoRa.h>
 
+
 byte gateway_id = 0x01;
-bool serial_log = true;
+byte local_address = 0xBB;     // address of this device
 const int max_packet_id = 128;
 const byte max_try_number = 3;
 const byte direction_count = 2;
- //array to check if a packet is duplicate [packet_id][try][direction]
+
+ /*array to check if a packet is duplicate [packet_id][try][direction]*/
 bool visited_packets[max_packet_id][max_try_number][direction_count] = { 0 };
 byte broadcast_address = 0xFF;
+
+bool serial_log = true;
 byte waite_time_base = 2;
 byte wait_time_range = 10;     // time to wait befor repeat (millis)
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 2;         // change for your board; must be a hardware interrupt pin
-String outgoing;              // outgoing message
 
-byte msgCount = 0;            // count of outgoing messages
-byte local_address = 0xBB;     // address of this device
-byte destination = 0xFF;      // destination to send to
-long lastSendTime = 0;        // last send time
-int interval = 2000;          // interval between sends
 
 void setup() { 
   Serial.begin(9600);                   // initialize serial
   while (!Serial);
 
-  Serial.println("LoRa Duplex");
+  log("LoRa lighting system Node");
 
   // override the default CS, reset, and IRQ pins (optional)
   LoRa.setPins(csPin, resetPin, irqPin);// set CS, reset, IRQ pin
 
   if (!LoRa.begin(433E6)) {             // initialize ratio at 915 MHz
-    Serial.println("LoRa init failed. Check your connections.");
+    log("LoRa init failed. Check your connections.");
     while (true);                       // if failed, do nothing
   }
 
@@ -91,7 +80,7 @@ void onReceive(int packetSize) {
   }
 
   if (incomming_lenght != incoming.length()) {   // check length for error
-    log("error: message length does not match length");
+    // log("error: message length does not match length");
     return;                             // skip rest of function
   }
 
@@ -107,7 +96,7 @@ void onReceive(int packetSize) {
   /*check if packet id is more than max*/
   if( incoming_packet_id >= max_packet_id){
     log("This message packet id is more than max");
-    LoRa_transmit(destination, incoming_packet_id, 1, 0, "ERROR: packet id is more than max");
+    LoRa_transmit(recipient, incoming_packet_id, 1, 0, "ERROR: packet id is more than max");
   } 
   /*check if this msg is from this node gateway*/
   if(incoming_gateway_id != gateway_id){
@@ -124,7 +113,7 @@ void onReceive(int packetSize) {
   // if the recipient isn't this device,
   if (recipient != local_address) {
     log("This message is not for me.");
-    repeat(destination, incoming_packet_id, direction, try_count, outgoing);
+    repeat(recipient, incoming_packet_id, direction, try_count, incoming);
     return;
   }
   
@@ -132,7 +121,7 @@ void onReceive(int packetSize) {
   if(recipient == broadcast_address){
     log("this message is a global command");
     run_command(incoming);
-    repeat(recipient, incoming_packet_id, direction, try_count, outgoing);
+    repeat(recipient, incoming_packet_id, direction, try_count, incoming);
     return;
   }
 
