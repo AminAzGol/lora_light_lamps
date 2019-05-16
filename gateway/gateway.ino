@@ -6,20 +6,26 @@
 #include <LoRa.h>
 enum State { server, ack, try_again };
 byte gateway_id = 0x01;
-byte local_address = 0xBB; // address of this device
+byte local_address = 0x01; // address of this device
 const int max_packet_id = 127;
 const byte max_try_number = 3;
 const byte direction_count = 2;
 const int timeout = 1000; //timeout for ack of a packet
 const String reset_command = "packet_numbers_reset";
-                          /*array to check if a packet is duplicate [packet_id][try][direction]*/
+
 byte packet_id = 0;
-bool visited_packets[max_packet_id][max_try_number][direction_count] = {0};
 byte broadcast_address = 0xFF;
 
+State state = server;
+byte node_id;
+String command;
+int current_time;
+int current_timeout;
+int current_try = 0;
+
+
 bool serial_log = true;
-byte waite_time_base = 2;
-byte wait_time_range = 10; // time to wait befor repeat (millis)
+
 const int csPin = 10;      // LoRa radio chip select
 const int resetPin = 9;    // LoRa radio reset
 const int irqPin = 2;      // change for your board; must be a hardware interrupt pin
@@ -43,12 +49,7 @@ void setup()
 
   log("LoRa init succeeded.");
 }
-State state = server;
-byte node_id;
-String command;
-int current_time;
-int current_timeout;
-int current_try = 0;
+
 void loop()
 {
   // parse for a packet, and call onReceive with the result:
@@ -193,6 +194,7 @@ void server_response(String msg){
   Serial.print("node: " + String(node_id,DEC));
   Serial.println("status: " + msg);
 }
+
 void reset_packet_id(){
   packet_id = 0;
   LoRa_transmit(0xFF, max_packet_id, 1, 0, reset_command);
