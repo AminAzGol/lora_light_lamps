@@ -8,12 +8,12 @@
 
 #define ETHERNET_CS A0
 #define LORA_CS 10
- 
+
 /*-------------------------Ethernet variables------------------------*/
 static byte myip[] = {192, 168, 1, 200};
 static byte gwip[] = {192, 168, 1, 1};
 static byte mymac[] = {0x74, 0x69, 0x69, 0x2D, 0x30, 0x39};
-byte Ethernet::buffer[500]; // tcp ip send and receive buffer
+byte Ethernet::buffer[400]; // tcp ip send and receive buffer
 
 const char pageA[] PROGMEM =
     "HTTP/1.0 200 OK\r\n"
@@ -132,7 +132,7 @@ void loop()
     // check if valid tcp data is received
     if (pos && millis() > accept_time)
     {
-      log("pos"+String(pos,DEC));
+      log("pos" + String(pos, DEC));
       char *data = (char *)Ethernet::buffer + pos;
       if (strncmp("GET /?command=", data, 14) == 0)
       {
@@ -141,21 +141,23 @@ void loop()
         sscanf(&data[14], "%d%s", &num, command);
         log("Node: " + String(num, DEC) + " - Command: " + command);
         node_id = num;
-        change_state(State::send_command);        
+        change_state(State::send_command);
       }
-      else{
+      else
+      {
         change_state(State::reply);
       }
     }
   }
-  else if(state == send_command){
-        //AMINAG: send_command
-        current_try = 0;
-        switch_modules(true);
-        LoRa_transmit(node_id, packet_id, 0, current_try, command);
-        current_time = millis();
-        current_timeout = current_time + timeout;
-        change_state(State::ack);
+  else if (state == send_command)
+  {
+    //AMINAG: send_command
+    current_try = 0;
+    switch_modules(true);
+    LoRa_transmit(node_id, packet_id, 0, current_try, command);
+    current_time = millis();
+    current_timeout = current_time + timeout;
+    change_state(State::ack);
   }
   else if (state == ack)
   {
@@ -192,16 +194,17 @@ void loop()
     }
     else
     {
-      server_response("sending command failed \n Node: " + String(node_id, DEC) + " is not accessable");
+      server_response("failed \n Node: " + String(node_id, DEC) + " not accessable");
       update_packet_id();
       change_state(State::reply);
     }
   }
-  else if( state == reply){
-      server_reply();
-      // delay(100);
-      accept_time = millis() + accept_interval;
-      change_state(State::server);
+  else if (state == reply)
+  {
+    server_reply();
+    // delay(100);
+    accept_time = millis() + accept_interval;
+    change_state(State::server);
   }
 }
 
@@ -280,7 +283,7 @@ bool onReceive(int packetSize)
     // log(" this is a forward (direction = 0) message so it's not a ack ");
     return false;
   }
-  log("node id is correct");
+  // log("node id is correct");
 
   if (incoming != "ack")
   {
@@ -335,7 +338,7 @@ void server_reply()
   memcpy_P(ether.tcpOffset(), pageA, sizeof pageA); // send first packet and not send the terminate flag
   ether.httpServerReply_with_flags(sizeof pageA - 1, TCP_FLAGS_ACK_V);
 
-  for (int i = 1; i < 10; i++)
+  for (int i = 0; i < 10; i++)
   {
 
     String button_template =
@@ -347,9 +350,20 @@ void server_reply()
         "<a href='/?command={{node_off}}turn_off'>Turn_off</a><br>"
         "<hr/>";
 
-    button_template.replace("{{lamp}}", String(i, DEC));
-    button_template.replace("{{node_off}}", String(i, DEC));
-    button_template.replace("{{node_on}}", String(i, DEC));
+    if (i == 0)
+    {
+      button_template.replace("{{lamp}}", "Global");
+      button_template.replace("{{node_off}}", "255");
+      button_template.replace("{{node_on}}", "255");
+    }
+    else
+    {
+
+      button_template.replace("{{lamp}}", String(i, DEC));
+      button_template.replace("{{node_off}}", String(i, DEC));
+      button_template.replace("{{node_on}}", String(i, DEC));
+    
+    }
     button_template.toCharArray(buttons_template_buffer, buttons_template_buffer_size);
     strcpy(ether.tcpOffset(), buttons_template_buffer); // send first packet and not send the terminate flag
     ether.httpServerReply_with_flags(strlen(buttons_template_buffer) - 1, TCP_FLAGS_ACK_V);
