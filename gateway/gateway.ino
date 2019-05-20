@@ -4,41 +4,87 @@
 */
 #include <SPI.h> // include libraries
 #include <LoRa.h>
-enum State { server, ack, try_again };
+#include <EtherCard.h>
+
+#define ETHERNET_CS A0
+#define LORA_CS 10
+ 
+/*-------------------------Ethernet variables------------------------*/
+static byte myip[] = {192, 168, 1, 200};
+static byte gwip[] = {192, 168, 1, 1};
+static byte mymac[] = {0x74, 0x69, 0x69, 0x2D, 0x30, 0x39};
+byte Ethernet::buffer[500]; // tcp ip send and receive buffer
+
+const char pageA[] PROGMEM =
+    "HTTP/1.0 200 OK\r\n"
+    "Content-Type: text/html\r\n"
+    "\r\n"
+    "<html>"
+    "<head><title>"
+    "Lora lighting System"
+    "</title></head>"
+    "<body>"
+    "<h3>LoRa Lighting System</h3>";
+
+const char pageEnd[] PROGMEM =
+    "<h4>Develoaper: Mohammad Amin Alizadeh Golestani</h4>";
+int buttons_template_buffer_size = 150;
+char buttons_template_buffer[150];
+long accept_time;
+int accept_interval = 1000;
+/*---------------------Lora variables--------------------------------*/
+enum State
+{
+  server,
+  send_command,
+  ack,
+  try_again,
+  reply
+};
 byte gateway_id = 0x01;
 byte local_address = 0x01; // address of this device
 const int max_packet_id = 127;
 const byte max_try_number = 3;
 const byte direction_count = 2;
 const int timeout = 1000; //timeout for ack of a packet
-const String reset_command = "packet_numbers_reset";
+const String reset_command PROGMEM = "packet_numbers_reset";
 
 byte packet_id = 0;
 byte broadcast_address = 0xFF;
 
 State state = server;
 byte node_id;
-String command;
+char command[20];
 int current_time;
 int current_timeout;
 int current_try = 0;
 
-
 bool serial_log = true;
 
-const int csPin = 10;      // LoRa radio chip select
-const int resetPin = 9;    // LoRa radio reset
-const int irqPin = 2;      // change for your board; must be a hardware interrupt pin
+const int csPin = 10;   // LoRa radeio chip select
+const int resetPin = 9; // LoRa radio reset
+const int irqPin = 2;   // change for your board; must be a hardware interrupt pin
 
 void setup()
 {
   Serial.begin(9600); // initialize serial
-  while (!Serial);
+  while (!Serial)
+    ;
 
   log("LoRa lighting system Gateway");
 
+  /*--------------------ethernet initialization---------------------*/
+  switch_modules(false);
+  if (ether.begin(sizeof Ethernet::buffer, mymac, A0) == 0)
+    Serial.println("Failed to access Ethernet controller");
+
+  ether.staticSetup(myip, gwip);
+  log("Ethernet Begun successfuly");
+
+  /*--------------------lora initialization--------------------------*/
+  switch_modules(true);
   // override the default CS, reset, and IRQ pins (optional)
-  LoRa.setPins(csPin, resetPin, irqPin); // set CS, reset, IRQ pin
+  LoRa.setPins(LORA_CS, resetPin, irqPin); // set CS, reset, IRQ pin
 
   if (!LoRa.begin(433E6))
   { // initialize ratio at 915 MHz
@@ -48,6 +94,10 @@ void setup()
   }
 
   log("LoRa init succeeded.");
+
+  /*------------------------------------------------------------*/
+  change_state(server);
+  accept_time = millis();
 }
 
 void loop()
@@ -55,7 +105,10 @@ void loop()
   // parse for a packet, and call onReceive with the result:
   if (state == server)
   {
-    //wait for server command
+    /*wait for server command*/
+
+    /* privious implementation with serial: 
+    
     if (Serial.available() > 0)
     {
       node_id = Serial.read();
@@ -69,41 +122,91 @@ void loop()
       current_timeout = current_time + timeout;
       change_state(State::ack);
     }
-  }
-  else if(state == ack){
-    
-      //wait for ack
-      if(onReceive(LoRa.parsePacket())){
-        update_packet_id();
-        server_response("Node: " + String(node_id,DEC) + " status is ok");
-        change_state(State::server);
-      } 
-      else if(current_time <= current_timeout){
-        current_time = millis();
+    */
+
+    /* new implementation with Ethernet and WebServer*/
+    //AMINAG: server
+    switch_modules(false); //switch to ethernet
+    // log("wait for data");
+    word pos = ether.packetLoop(ether.packetReceive());
+    // check if valid tcp data is received
+    if (pos && millis() > accept_time)
+    {
+      log("pos"+String(pos,DEC));
+      char *data = (char *)Ethernet::buffer + pos;
+      if (strncmp("GET /?command=", data, 14) == 0)
+      {
+        int num = 0;
+        int p = 14;
+        sscanf(&data[14], "%d%s", &num, command);
+        log("Node: " + String(num, DEC) + " - Command: " + command);
+        node_id = num;
+        change_state(State::send_command);        
       }
       else{
-        //Timeout happend
-        log("change state to Try_again");
-        change_state(State::try_again);
+        change_state(State::reply);
       }
+    }
   }
-  else if (state == try_again){
-    if(current_try < max_try_number){
+  else if(state == send_command){
+        //AMINAG: send_command
+        current_try = 0;
+        switch_modules(true);
+        LoRa_transmit(node_id, packet_id, 0, current_try, command);
+        current_time = millis();
+        current_timeout = current_time + timeout;
+        change_state(State::ack);
+  }
+  else if (state == ack)
+  {
+
+    //wait for ack
+    switch_modules(true);
+    if (onReceive(LoRa.parsePacket()))
+    {
+      update_packet_id();
+      server_response("Node: " + String(node_id, DEC) + " status is ok");
+      change_state(State::reply);
+    }
+    else if (current_time <= current_timeout)
+    {
+      current_time = millis();
+    }
+    else
+    {
+      //Timeout happend
+      // log("change state to Try_again");
+      change_state(State::try_again);
+    }
+  }
+  else if (state == try_again)
+  {
+    switch_modules(true);
+    if (current_try < max_try_number)
+    {
       current_try++;
       LoRa_transmit(node_id, packet_id, 0, current_try, command);
       current_time = millis();
       current_timeout = current_time + timeout;
       change_state(State::ack);
     }
-    else{
-      server_response("sending command failed \n Node: " + String(node_id,DEC) + " is not accessable");
+    else
+    {
+      server_response("sending command failed \n Node: " + String(node_id, DEC) + " is not accessable");
       update_packet_id();
-      change_state(State::server);
+      change_state(State::reply);
     }
+  }
+  else if( state == reply){
+      server_reply();
+      // delay(100);
+      accept_time = millis() + accept_interval;
+      change_state(State::server);
   }
 }
 
-void change_state(State new_state){
+void change_state(State new_state)
+{
   log("state changed : " + String(new_state, DEC));
   state = new_state;
 }
@@ -120,12 +223,13 @@ void LoRa_transmit(byte destination, byte packet_id, byte direction, byte try_co
   LoRa.write(outgoing.length()); // add payload length
   LoRa.print(outgoing);          // add payload
   LoRa.endPacket();              // finish packet and send it
-  
-  log("Packet transmited");
+
+  // log("Packet transmited");
 }
-void update_packet_id(){
+void update_packet_id()
+{
   packet_id++;
-  if(packet_id >= max_packet_id)
+  if (packet_id >= max_packet_id)
     reset_packet_id;
 }
 bool onReceive(int packetSize)
@@ -156,28 +260,31 @@ bool onReceive(int packetSize)
     return false; // skip rest of function
   }
 
-  log("Received from: 0x" + String(sender, HEX));
-  log("Sent to: 0x" + String(recipient, HEX));
-  log("Message ID: " + String(incoming_packet_id));
-  log("Message length: " + String(incomming_lenght));
-  log("Message: " + incoming);
-  log("RSSI: " + String(LoRa.packetRssi()));
-  log("Snr: " + String(LoRa.packetSnr()));
-  log("");
+  // log("Received from: 0x" + String(sender, HEX));
+  // log("Sent to: 0x" + String(recipient, HEX));
+  // log("Message ID: " + String(incoming_packet_id));
+  // log("Message length: " + String(incomming_lenght));
+  // log("Message: " + incoming);
+  // log("RSSI: " + String(LoRa.packetRssi()));
+  // log("Snr: " + String(LoRa.packetSnr()));
+  // log("");
 
-  if(recipient != node_id){
-    log(" this message is not this node ack ");
+  if (recipient != node_id)
+  {
+    // log(" this message is not this node ack ");
     return false;
   }
 
-  if(direction == 0){
-    log(" this is a forward (direction = 0) message so it's not a ack ");
+  if (direction == 0)
+  {
+    // log(" this is a forward (direction = 0) message so it's not a ack ");
     return false;
   }
   log("node id is correct");
-  
-  if(incoming != "ack"){
-    log(" everything is fine but the message is not ack ");
+
+  if (incoming != "ack")
+  {
+    // log(" everything is fine but the message is not ack ");
     return false;
   }
 
@@ -190,13 +297,63 @@ void log(String msg)
     Serial.println(msg);
 }
 
-void server_response(String msg){
-  log("updating server status");
-  Serial.print("node: " + String(node_id,DEC));
+void server_response(String msg)
+{
+  // log("updating server status");
+  Serial.print("node: " + String(node_id, DEC));
   Serial.println("status: " + msg);
 }
 
-void reset_packet_id(){
+void reset_packet_id()
+{
   packet_id = 0;
   LoRa_transmit(0xFF, max_packet_id, 1, 0, reset_command);
+}
+
+void switch_modules(bool switch_to_lora)
+{
+  /*switch to lora*/
+  return;
+  if (switch_to_lora)
+  {
+    digitalWrite(LORA_CS, LOW);
+    digitalWrite(ETHERNET_CS, HIGH);
+  }
+
+  /*switch to ethernet*/
+  else
+  {
+    digitalWrite(LORA_CS, HIGH);
+    digitalWrite(ETHERNET_CS, LOW);
+  }
+}
+
+void server_reply()
+{
+
+  ether.httpServerReplyAck();                       // send ack to the request
+  memcpy_P(ether.tcpOffset(), pageA, sizeof pageA); // send first packet and not send the terminate flag
+  ether.httpServerReply_with_flags(sizeof pageA - 1, TCP_FLAGS_ACK_V);
+
+  for (int i = 1; i < 10; i++)
+  {
+
+    String button_template =
+        "<h3>packet 2</h3>"
+        "<p><em>"
+        "lamp {{lamp}}"
+        "</em></p>"
+        "<a href='/?command={{node_on}}turn_on'>Turn_on</a>---"
+        "<a href='/?command={{node_off}}turn_off'>Turn_off</a><br>"
+        "<hr/>";
+
+    button_template.replace("{{lamp}}", String(i, DEC));
+    button_template.replace("{{node_off}}", String(i, DEC));
+    button_template.replace("{{node_on}}", String(i, DEC));
+    button_template.toCharArray(buttons_template_buffer, buttons_template_buffer_size);
+    strcpy(ether.tcpOffset(), buttons_template_buffer); // send first packet and not send the terminate flag
+    ether.httpServerReply_with_flags(strlen(buttons_template_buffer) - 1, TCP_FLAGS_ACK_V);
+  }
+  memcpy_P(ether.tcpOffset(), pageEnd, sizeof pageEnd); // send first packet and not send the terminate flag
+  ether.httpServerReply_with_flags(sizeof pageEnd - 1, TCP_FLAGS_ACK_V | TCP_FLAGS_FIN_V);
 }
