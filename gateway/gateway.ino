@@ -10,7 +10,7 @@ byte local_address = 0x01; // address of this device
 const int max_packet_id = 127;
 const byte max_try_number = 3;
 const byte direction_count = 2;
-const int timeout = 1000; //timeout for ack of a packet
+const int timeout = 2000; //timeout for ack of a packet
 const String reset_command = "packet_numbers_reset";
 
 byte packet_id = 0;
@@ -41,7 +41,7 @@ void setup()
   LoRa.setPins(csPin, resetPin, irqPin); // set CS, reset, IRQ pin
 
   if (!LoRa.begin(433E6))
-  { // initialize ratio at 915 MHz
+  { // initialize ratio at 433 MHz
     log("LoRa init failed. Check your connections.");
     while (true)
       ; // if failed, do nothing
@@ -56,6 +56,24 @@ void loop()
   if (state == server)
   {
     //wait for server command
+
+/*
+    //for debug------------------
+    for(int i=1;  i < 5; i++){
+
+    LoRa_transmit(i, packet_id, 0, 0, "turn_on");
+        update_packet_id();
+  
+    delay(300);
+    LoRa_transmit(i, packet_id, 0, 0, "turn_off");
+        update_packet_id();
+
+    delay(300);
+    }
+    return;
+    //debug end-----------------------
+
+*/
     if (Serial.available() > 0)
     {
       node_id = Serial.read();
@@ -65,8 +83,10 @@ void loop()
       log("command: " + command);
       current_try = 0;
       LoRa_transmit(node_id, packet_id, 0, current_try, command);
+  
       current_time = millis();
       current_timeout = current_time + timeout;
+      
       change_state(State::ack);
     }
   }
@@ -75,7 +95,7 @@ void loop()
       //wait for ack
       if(onReceive(LoRa.parsePacket())){
         update_packet_id();
-        server_response("Node: " + String(node_id,DEC) + " status is ok");
+        server_response("Node " + String(node_id,DEC) + " status: OK");
         change_state(State::server);
       } 
       else if(current_time <= current_timeout){
@@ -83,8 +103,15 @@ void loop()
       }
       else{
         //Timeout happend
+        /* 
         log("change state to Try_again");
         change_state(State::try_again);
+        */
+
+       /* if timout happen the packet id still needs to get updated */
+        log("Timeout");
+        update_packet_id();
+        change_state(State::server);
       }
   }
   else if (state == try_again){
@@ -110,15 +137,25 @@ void change_state(State new_state){
 
 void LoRa_transmit(byte destination, byte packet_id, byte direction, byte try_count, String outgoing)
 {
+  log("---------------new packet--------------");  
   LoRa.beginPacket();            // start packet
   LoRa.write(gateway_id);        // add current zone gateway id
+  log("gateway id : "+String(gateway_id));
   LoRa.write(destination);       // add destination address
+  log("destination : "+String(destination));  
   LoRa.write(local_address);     // add sender address
+  log("local_address : "+String(local_address)); 
   LoRa.write(packet_id);         // add message ID
+  log("packet id : "+String(packet_id));  
   LoRa.write(direction);         // add direction could be 0 or 1
+  log("direction : "+String(direction));   
   LoRa.write(try_count);         // add the count of gateway tryings
+  log("try_count : "+String(try_count));   
   LoRa.write(outgoing.length()); // add payload length
+  log("payload length : "+String(outgoing.length()));   
   LoRa.print(outgoing);          // add payload
+  log("payload : "+String(outgoing)); 
+  log("---------------------------------------");  
   LoRa.endPacket();              // finish packet and send it
   
   log("Packet transmited");
@@ -126,7 +163,7 @@ void LoRa_transmit(byte destination, byte packet_id, byte direction, byte try_co
 void update_packet_id(){
   packet_id++;
   if(packet_id >= max_packet_id)
-    reset_packet_id;
+    reset_packet_id();
 }
 bool onReceive(int packetSize)
 {
@@ -171,10 +208,10 @@ bool onReceive(int packetSize)
   }
 
   if(direction == 0){
-    log(" this is a forward (direction = 0) message so it's not a ack ");
+    // log(" this is a forward (direction = 0) msg ");
+    log(" a repeat heard ");
     return false;
   }
-  log("node id is correct");
   
   if(incoming != "ack"){
     log(" everything is fine but the message is not ack ");
@@ -191,9 +228,10 @@ void log(String msg)
 }
 
 void server_response(String msg){
-  log("updating server status");
-  Serial.print("node: " + String(node_id,DEC));
-  Serial.println("status: " + msg);
+  // log("updating server status");
+  // Serial.print("node " + String(node_id,DEC));
+  // Serial.println("status: " + msg);
+  Serial.println(msg);
 }
 
 void reset_packet_id(){
