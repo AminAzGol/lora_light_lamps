@@ -9,23 +9,26 @@
 #define LED_PIN_NUMBER_2 5
 
 byte gateway_id = 0x01;
-byte local_address = 0x02;     // address of this device
+byte local_address = 0x04;     // address of this device
 const int max_packet_id = 128;
 const byte max_try_number = 3;
 const byte direction_count = 2;
-
+const String reset_command = "packet_numbers_reset";
  /*array to check if a packet is duplicate [packet_id][try][direction]*/
 bool visited_packets[max_packet_id][max_try_number][direction_count] = { 0 };
 byte broadcast_address = 0xFF;
 
 bool serial_log = true;
-byte waite_time_base = 2;
-byte wait_time_range = 10;     // time to wait befor repeat (millis)
+const byte waite_time_min = 2;
+const byte wait_time_max = 12;     // time to wait befor repeat (millis)
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 2;         // change for your board; must be a hardware interrupt pin
 int delay_holder = 0;
 bool blink_data_to_write = 0;
+// int packet_number_reset_timer = 0;
+// const int packet_number_reset_after = 20000; //clear the old packets after 20 sec.
+
 void setup() { 
   Serial.begin(9600);                   // initialize serial
   while (!Serial);
@@ -78,7 +81,6 @@ void LoRa_transmit(byte destination, byte packet_id, byte direction, byte try_co
   LoRa.write(outgoing.length());        // add payload length
   LoRa.print(outgoing);                 // add payload
   LoRa.endPacket();                     // finish packet and send it
-  visited_packets[packet_id][try_count][direction] = 1;    // store this packet as visited for check duplicate
   log("Packet transmited");
 
 }
@@ -104,7 +106,7 @@ void onReceive(int packetSize) {
   log("Message length: " + String(incomming_lenght));
   log("RSSI: " + String(LoRa.packetRssi()));
   log("Snr: " + String(LoRa.packetSnr()));
-  
+ 
   while (LoRa.available()) {
     incoming += (char)LoRa.read();
   }
@@ -134,28 +136,31 @@ void onReceive(int packetSize) {
     log("This message is duplicate I received it before");
     
   }
-  
-  // if the recipient isn't this device,
-  else if (recipient != local_address) {
-    log("This message is not for me.");
-    repeat(recipient, incoming_packet_id, direction, try_count, incoming);
-    
-  }
-  
-  // if the message is a broadcast command
-  else if(recipient == broadcast_address){
-    log("this message is a global command");
-    run_command(incoming);
-    repeat(recipient, incoming_packet_id, direction, try_count, incoming);
-    
-  }
+  else{
+    visited_packets[incoming_packet_id][try_count][direction] = 1;    // store this packet as visited for check duplicate
+    // if the recipient isn't this device,
+    if (recipient != local_address && recipient != broadcast_address) {
+      log("This message is not for me."); 
+      repeat(recipient, incoming_packet_id, direction, try_count, incoming);
+      
+    }
 
-  // if this message is just for this device
-  else if(recipient == local_address){
-    run_command(incoming);
-    acknowledge(recipient, incoming_packet_id);
-    
+    // if the message is a broadcast command
+    else if(recipient == broadcast_address){
+      log("this message is a global command");
+      run_command(incoming);
+      repeat(recipient, incoming_packet_id, direction, try_count, incoming);
+      
+    }
+
+    // if this message is just for this device
+    else if(recipient == local_address){
+      run_command(incoming);
+      acknowledge(recipient, incoming_packet_id);
+      
+    }
   }
+  
   digitalWrite(LED_PIN_NUMBER_1, LOW);
 }
 
@@ -165,17 +170,18 @@ void log(String msg){
 }
 
 bool duplicate(byte packet_id,byte try_count, byte direction){
+  log(String(visited_packets[packet_id][try_count][direction]));
   return visited_packets[packet_id][try_count][direction];
 }
 void repeat(byte destination, byte msg_id, byte driection, byte try_count,String outgoing) {
-  byte time_to_wait = rand() * wait_time_range + waite_time_base;
+  byte time_to_wait = random(waite_time_min,wait_time_max);
   log("repeating the message after: " + String(time_to_wait, DEC) );
   delay(time_to_wait);
   LoRa_transmit(destination, msg_id, driection, try_count, outgoing);
 }
 
 void run_command(String incoming){
-  log("running the incomming Command" + incoming);
+  log("running the incomming Command: " + incoming);
   if( incoming == "turn_on"){
     digitalWrite(LAMP_PIN_NUMBER, HIGH);
     
@@ -190,8 +196,10 @@ void run_command(String incoming){
     digitalWrite(LED_PIN_NUMBER_2, LOW);
   }
 
-  else if( incoming == "packet_numbers_reset")
+  else if( incoming == reset_command){
+    log("clear visited");
     clear_visited();
+  }
 }
 
 void acknowledge(byte destination, byte msg_id){
@@ -199,8 +207,13 @@ void acknowledge(byte destination, byte msg_id){
 }
 
 void clear_visited(){
-  for (int i = 0; i < max_packet_id;i++)
-    for(byte j=0;j< max_try_number; j++)
-      for(byte k=0; k<direction_count; k++) 
-        visited_packets[i][j][k] = 0;
+  memset(visited_packets, 0, sizeof(visited_packets[0][0][0]) * max_packet_id * max_try_number * direction_count );
+  log("Clear visited called");
+  // for (int i = 0; i < max_packet_id;i++)
+  //   for(byte j=0; j < max_try_number; j++)
+  //     for(byte k = 0; k < direction_count; k++){
+  //       // log("Removing: "+String(i) +" " + String(j) + " "+String(k));
+  //       visited_packets[i][j][k] = false;
+  //       // log(String(visited_packets[i][j][k]));
+  //     }
 }
