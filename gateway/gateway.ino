@@ -7,7 +7,7 @@
 enum State { server, ack, try_again };
 byte gateway_id = 0x01;
 byte local_address = 0x01; // address of this device
-const int max_packet_id = 10;
+const int max_packet_id = 127;
 const byte max_try_number = 3;
 const byte direction_count = 2;
 const int timeout = 2000; //timeout for ack of a packet
@@ -59,18 +59,18 @@ void loop()
 
     //for debug------------------
 
-    for(int i=1;  i < 5; i++){
+    // for(int i=1;  i < 5; i++){
 
-    LoRa_transmit(i, packet_id, 0, 0, "turn_on");
-        update_packet_id();
+    // LoRa_transmit(i, packet_id, 0, 0, "turn_on");
+    //     update_packet_id();
   
-    delay(150);
-    LoRa_transmit(i, packet_id, 0, 0, "turn_off");
-        update_packet_id();
+    // delay(150);
+    // LoRa_transmit(i, packet_id, 0, 0, "turn_off");
+    //     update_packet_id();
 
-    delay(150);
-    }
-    return;
+    // delay(150);
+    // }
+    // return;
 
 
     //debug end-----------------------
@@ -82,6 +82,11 @@ void loop()
       command = Serial.readString();
       log("node_id: " + String(node_id, DEC));
       log("command: " + command);
+      if(command == reset_command){
+        reset_packet_id();
+        return;
+      }
+
       current_try = 0;
       LoRa_transmit(node_id, packet_id, 0, current_try, command);
   

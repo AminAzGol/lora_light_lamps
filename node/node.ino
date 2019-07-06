@@ -9,7 +9,7 @@
 #define LED_PIN_NUMBER_2 5
 
 byte gateway_id = 0x01;
-byte local_address = 0x04;     // address of this device
+byte local_address = 0x03;     // address of this device
 const int max_packet_id = 128;
 const byte max_try_number = 3;
 const byte direction_count = 2;
@@ -20,14 +20,12 @@ byte broadcast_address = 0xFF;
 
 bool serial_log = true;
 const byte waite_time_min = 2;
-const byte wait_time_max = 12;     // time to wait befor repeat (millis)
+const byte wait_time_max = 52;     // time to wait befor repeat (millis)
 const int csPin = 10;          // LoRa radio chip select
 const int resetPin = 9;       // LoRa radio reset
 const int irqPin = 2;         // change for your board; must be a hardware interrupt pin
 int delay_holder = 0;
 bool blink_data_to_write = 0;
-// int packet_number_reset_timer = 0;
-// const int packet_number_reset_after = 20000; //clear the old packets after 20 sec.
 
 void setup() { 
   Serial.begin(9600);                   // initialize serial
@@ -197,7 +195,6 @@ void run_command(String incoming){
   }
 
   else if( incoming == reset_command){
-    log("clear visited");
     clear_visited();
   }
 }
@@ -209,11 +206,4 @@ void acknowledge(byte destination, byte msg_id){
 void clear_visited(){
   memset(visited_packets, 0, sizeof(visited_packets[0][0][0]) * max_packet_id * max_try_number * direction_count );
   log("Clear visited called");
-  // for (int i = 0; i < max_packet_id;i++)
-  //   for(byte j=0; j < max_try_number; j++)
-  //     for(byte k = 0; k < direction_count; k++){
-  //       // log("Removing: "+String(i) +" " + String(j) + " "+String(k));
-  //       visited_packets[i][j][k] = false;
-  //       // log(String(visited_packets[i][j][k]));
-  //     }
 }
